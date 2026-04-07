@@ -4,6 +4,7 @@ members = [
     "crates/vbench-core",
     "crates/vbench-strata-ipc",
     "crates/vbench-strata",
+    "crates/vbench-cli",
 ]
 
 [workspace.package]
