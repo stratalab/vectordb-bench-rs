@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/vbench-core",
     "crates/vbench-strata-ipc",
+    "crates/vbench-strata",
 ]
 
 [workspace.package]
