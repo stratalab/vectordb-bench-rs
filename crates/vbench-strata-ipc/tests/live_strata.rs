@@ -63,7 +63,8 @@ async fn ping_round_trip_against_real_daemon() {
     let workdir = TempDir::new().expect("tempdir");
     let mut child = TokioCommand::new(&strata_bin)
         .arg("up")
-        .arg("--foreground")
+        .arg("--fg")
+        .arg("--db")
         .arg(workdir.path())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -99,7 +100,8 @@ async fn vector_create_upsert_query_against_real_daemon() {
     let workdir = TempDir::new().expect("tempdir");
     let mut child = TokioCommand::new(&strata_bin)
         .arg("up")
-        .arg("--foreground")
+        .arg("--fg")
+        .arg("--db")
         .arg(workdir.path())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
