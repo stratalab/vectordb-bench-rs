@@ -1,179 +1,227 @@
-//! Field-name guard for the `TestResult` JSON schema.
+//! Strict schema-fidelity tests for the `TestResult` JSON we emit.
 //!
-//! Serialises a synthetic `TestResult` and asserts every key name matches
-//! VectorDBBench's `vectordb_bench/models.py:TestResult`. If anyone renames
-//! a field on either side this test fails loudly, instead of producing
+//! Validates field names against VectorDBBench's
+//! `vectordb_bench/models.py:TestResult`, `CaseResult`, `TaskConfig`,
+//! `CaseConfig`, and `vectordb_bench/metric.py:Metric`. Cross-referenced
+//! against a real published file (ElasticCloud
+//! `result_20260403_standard_elasticcloud.json`).
+//!
+//! These tests are the long-term guard against schema drift. If anyone
+//! renames a field on either side they fail loudly, instead of producing
 //! silently-incomparable JSON.
-//!
-//! When upstream's schema evolves, the fix is to update both this expected
-//! list and the corresponding `result.rs` field name in the same commit.
 
 use std::collections::BTreeSet;
 
 use vbench_core::{
-    CaseConfig, DbConfig, HostInfo, ResultMetrics, TaskConfig, TestResult, Timestamps,
+    result_label, CaseConfig, CaseResult, ConcurrencySearchConfig, ResultMetric, TaskConfig,
+    TestResult,
 };
 
 fn synthetic_result() -> TestResult {
-    TestResult {
-        vbench_schema_version: "1".to_string(),
-        task_label: "test".to_string(),
-        db_config: DbConfig {
-            adapter: "test".to_string(),
-            db_version: "0.0.0".to_string(),
-            install_method: Some("test".to_string()),
-            hnsw_m: Some("default".to_string()),
-            hnsw_ef_construction: Some("default".to_string()),
-            hnsw_ef_search: Some("default".to_string()),
-            notes: Some("synthetic".to_string()),
-        },
-        case_config: CaseConfig {
-            dataset: "synthetic".to_string(),
-            dim: 8,
-            metric: "cosine".to_string(),
-            recall_k: 10,
-            num_train: 100,
-            num_test: 10,
-        },
-        task_config: TaskConfig {
-            batch_size: 1000,
-            warmup_queries: 200,
-            run_concurrent: false,
-        },
-        metrics: ResultMetrics {
-            load_duration: 1.5,
-            optimize_duration: 0.5,
-            recall: 0.95,
-            ndcg: 0.92,
-            serial_latency_avg: 1.2,
-            serial_latency_p50: 1.0,
-            serial_latency_p95: 2.5,
-            serial_latency_p99: 3.0,
-            serial_query_count: 10,
-            conc_qps_list: vec![],
-            conc_latency_p99_list: vec![],
-        },
-        timestamps: Timestamps {
-            started_at: "2026-04-07T00:00:00Z".to_string(),
-            finished_at: "2026-04-07T00:00:02Z".to_string(),
-            host: HostInfo::snapshot(),
-        },
-    }
-}
+    let metrics = ResultMetric {
+        max_load_count: 0,
+        insert_duration: 1.0,
+        optimize_duration: 0.5,
+        load_duration: 1.5,
+        qps: 0.0,
+        serial_latency_p99: 0.0106, // seconds — 10.6 ms
+        serial_latency_p95: 0.0073,
+        recall: 0.95,
+        ndcg: 0.93,
+        ..ResultMetric::default()
+    };
 
-fn collect_keys_recursive(value: &serde_json::Value, prefix: &str, out: &mut BTreeSet<String>) {
-    match value {
-        serde_json::Value::Object(map) => {
-            for (k, v) in map {
-                let path = if prefix.is_empty() {
-                    k.clone()
-                } else {
-                    format!("{prefix}.{k}")
-                };
-                out.insert(path.clone());
-                collect_keys_recursive(v, &path, out);
-            }
-        }
-        serde_json::Value::Array(arr) => {
-            for v in arr {
-                collect_keys_recursive(v, prefix, out);
-            }
-        }
-        _ => {}
+    let case = CaseResult {
+        metrics,
+        task_config: TaskConfig {
+            db: "TestDB".to_string(),
+            db_config: serde_json::json!({
+                "db_label": "TestDB",
+                "version": "1.0.0",
+                "note": "synthetic test",
+            }),
+            db_case_config: serde_json::json!({
+                "metric_type": "COSINE",
+            }),
+            case_config: CaseConfig {
+                case_id: 5, // Performance768D1M
+                custom_case: None,
+                k: 100,
+                concurrency_search_config: ConcurrencySearchConfig::default(),
+            },
+            stages: vec![
+                "drop_old".to_string(),
+                "load".to_string(),
+                "search_serial".to_string(),
+            ],
+            load_concurrency: 1,
+        },
+        label: result_label::NORMAL.to_string(),
+    };
+
+    TestResult {
+        run_id: TestResult::new_run_id(),
+        task_label: "synthetic-task".to_string(),
+        results: vec![case],
+        file_fmt: "result_{}_{}_{}.json".to_string(),
+        timestamp: 1_700_000_000.0,
     }
 }
 
 #[test]
-fn schema_emits_expected_top_level_keys() {
+fn schema_top_level_keys_match_upstream() {
     let result = synthetic_result();
     let json = serde_json::to_value(&result).unwrap();
     let obj = json.as_object().expect("top-level is an object");
-
     let keys: BTreeSet<String> = obj.keys().cloned().collect();
 
-    // The set of fields VectorDBBench's leaderboard tooling looks for at the
-    // top level of TestResult. Adding a new top-level field requires updating
-    // both ends.
+    // From `vectordb_bench/models.py:TestResult`.
     let expected = BTreeSet::from([
-        "vbench_schema_version".to_string(),
+        "run_id".to_string(),
         "task_label".to_string(),
-        "db_config".to_string(),
-        "case_config".to_string(),
-        "task_config".to_string(),
-        "metrics".to_string(),
-        "timestamps".to_string(),
+        "results".to_string(),
+        "file_fmt".to_string(),
+        "timestamp".to_string(),
     ]);
 
     assert_eq!(
         keys, expected,
-        "top-level TestResult keys drifted from the expected schema",
+        "top-level TestResult keys drifted from upstream",
     );
 }
 
 #[test]
-fn schema_metrics_block_has_required_fields() {
+fn schema_case_result_keys_match_upstream() {
     let result = synthetic_result();
     let json = serde_json::to_value(&result).unwrap();
-    let metrics = json
-        .get("metrics")
-        .and_then(|v| v.as_object())
+    let case = json["results"][0]
+        .as_object()
+        .expect("results[0] is an object");
+    let keys: BTreeSet<String> = case.keys().cloned().collect();
+
+    // From `vectordb_bench/models.py:CaseResult`.
+    let expected = BTreeSet::from([
+        "metrics".to_string(),
+        "task_config".to_string(),
+        "label".to_string(),
+    ]);
+
+    assert_eq!(keys, expected, "CaseResult keys drifted from upstream");
+}
+
+#[test]
+fn schema_metric_block_has_every_upstream_field() {
+    let result = synthetic_result();
+    let json = serde_json::to_value(&result).unwrap();
+    let metrics = json["results"][0]["metrics"]
+        .as_object()
         .expect("metrics is an object");
 
-    // The leaderboard reads these by exact name. Renaming any of them
-    // makes our numbers silently uncomparable.
+    // Every field from `vectordb_bench/metric.py:Metric`.
+    // Cross-checked against the published ElasticCloud result file.
     let required = [
-        "load_duration",
+        // load
+        "max_load_count",
+        // performance & streaming
+        "insert_duration",
         "optimize_duration",
+        "load_duration",
+        // performance
+        "qps",
+        "serial_latency_p99",
+        "serial_latency_p95",
         "recall",
         "ndcg",
-        "serial_latency_avg",
-        "serial_latency_p50",
-        "serial_latency_p95",
-        "serial_latency_p99",
-        "serial_query_count",
+        // concurrent
+        "conc_num_list",
+        "conc_qps_list",
+        "conc_latency_p99_list",
+        "conc_latency_p95_list",
+        "conc_latency_avg_list",
+        // streaming
+        "st_ideal_insert_duration",
+        "st_search_stage_list",
+        "st_search_time_list",
+        "st_max_qps_list_list",
+        "st_recall_list",
+        "st_ndcg_list",
+        "st_serial_latency_p99_list",
+        "st_serial_latency_p95_list",
+        "st_conc_failed_rate_list",
+        "st_conc_num_list_list",
+        "st_conc_qps_list_list",
+        "st_conc_latency_p99_list_list",
+        "st_conc_latency_p95_list_list",
+        "st_conc_latency_avg_list_list",
     ];
     for field in required {
         assert!(
             metrics.contains_key(field),
-            "metrics is missing required field {field}",
+            "metrics is missing required upstream field: {field}"
         );
     }
 }
 
 #[test]
-fn schema_case_config_has_required_fields() {
+fn schema_task_config_keys_match_upstream() {
     let result = synthetic_result();
     let json = serde_json::to_value(&result).unwrap();
-    let case = json
-        .get("case_config")
-        .and_then(|v| v.as_object())
+    let tc = json["results"][0]["task_config"]
+        .as_object()
+        .expect("task_config is an object");
+    let keys: BTreeSet<String> = tc.keys().cloned().collect();
+
+    // From `vectordb_bench/models.py:TaskConfig`.
+    let expected = BTreeSet::from([
+        "db".to_string(),
+        "db_config".to_string(),
+        "db_case_config".to_string(),
+        "case_config".to_string(),
+        "stages".to_string(),
+        "load_concurrency".to_string(),
+    ]);
+
+    assert_eq!(keys, expected, "TaskConfig keys drifted from upstream");
+}
+
+#[test]
+fn schema_case_config_keys_match_upstream() {
+    let result = synthetic_result();
+    let json = serde_json::to_value(&result).unwrap();
+    let cc = json["results"][0]["task_config"]["case_config"]
+        .as_object()
         .expect("case_config is an object");
+    let keys: BTreeSet<String> = cc.keys().cloned().collect();
 
-    let required = [
-        "dataset",
-        "dim",
-        "metric",
-        "recall_k",
-        "num_train",
-        "num_test",
-    ];
-    for field in required {
-        assert!(
-            case.contains_key(field),
-            "case_config is missing required field {field}",
-        );
-    }
+    // From `vectordb_bench/models.py:CaseConfig`.
+    let expected = BTreeSet::from([
+        "case_id".to_string(),
+        "custom_case".to_string(),
+        "k".to_string(),
+        "concurrency_search_config".to_string(),
+    ]);
+
+    assert_eq!(keys, expected, "CaseConfig keys drifted from upstream");
 }
 
 #[test]
-fn schema_db_config_includes_db_version() {
-    // Critical field for drift attribution: every published result must
-    // identify which DB version produced it.
+fn schema_concurrency_search_config_keys_match_upstream() {
     let result = synthetic_result();
     let json = serde_json::to_value(&result).unwrap();
-    assert!(
-        json["db_config"]["db_version"].is_string(),
-        "db_config.db_version must be present",
+    let csc = json["results"][0]["task_config"]["case_config"]["concurrency_search_config"]
+        .as_object()
+        .expect("concurrency_search_config is an object");
+    let keys: BTreeSet<String> = csc.keys().cloned().collect();
+
+    let expected = BTreeSet::from([
+        "num_concurrency".to_string(),
+        "concurrency_duration".to_string(),
+        "concurrency_timeout".to_string(),
+    ]);
+
+    assert_eq!(
+        keys, expected,
+        "ConcurrencySearchConfig keys drifted from upstream"
     );
 }
 
@@ -183,35 +231,49 @@ fn schema_round_trips_through_serde() {
     let json = serde_json::to_string(&original).unwrap();
     let decoded: TestResult = serde_json::from_str(&json).unwrap();
     assert_eq!(decoded.task_label, original.task_label);
-    assert_eq!(decoded.metrics.recall, original.metrics.recall);
-    assert_eq!(
-        decoded.metrics.serial_latency_p99,
-        original.metrics.serial_latency_p99
+    assert_eq!(decoded.results.len(), 1);
+    assert_eq!(decoded.results[0].label, ":)");
+    assert_eq!(decoded.results[0].task_config.case_config.case_id, 5);
+}
+
+#[test]
+fn schema_latency_units_are_seconds_not_ms() {
+    // Document the unit by reading back what we wrote and asserting the
+    // value range. 0.0106 seconds = 10.6 ms; if anyone "fixes" this to
+    // milliseconds the value would jump to 10.6.
+    let result = synthetic_result();
+    let json = serde_json::to_value(&result).unwrap();
+    let p99 = json["results"][0]["metrics"]["serial_latency_p99"]
+        .as_f64()
+        .expect("serial_latency_p99 is a number");
+    assert!(
+        (p99 - 0.0106).abs() < 1e-9,
+        "serial_latency_p99 is being converted; should remain in seconds (0.0106), got {p99}",
     );
 }
 
 #[test]
-fn schema_timestamps_host_present() {
+fn schema_load_duration_equals_insert_plus_optimize() {
+    // Upstream's invariant: load_duration = insert_duration + optimize_duration.
     let result = synthetic_result();
-    let json = serde_json::to_value(&result).unwrap();
-    let host = &json["timestamps"]["host"];
-    assert!(host.is_object(), "timestamps.host must be an object");
+    let m = &result.results[0].metrics;
+    assert!(
+        (m.load_duration - (m.insert_duration + m.optimize_duration)).abs() < 1e-9,
+        "load_duration ({}) != insert_duration ({}) + optimize_duration ({})",
+        m.load_duration,
+        m.insert_duration,
+        m.optimize_duration,
+    );
+}
 
-    // host snapshot must surface the bare minimum so reviewers can recognise
-    // the box.
-    let mut all_keys = BTreeSet::new();
-    collect_keys_recursive(host, "", &mut all_keys);
-    for required in [
-        "hostname",
-        "os",
-        "arch",
-        "cpu_brand",
-        "cpu_cores",
-        "total_memory_bytes",
-    ] {
-        assert!(
-            all_keys.contains(required),
-            "host snapshot missing field: {required}",
-        );
-    }
+#[test]
+fn schema_run_id_is_uuid_hex_no_dashes() {
+    // Upstream uses UUID4 hex form: 32 hex chars, no dashes.
+    let id = TestResult::new_run_id();
+    assert_eq!(id.len(), 32, "run_id should be 32 hex chars: {id}");
+    assert!(
+        id.chars().all(|c| c.is_ascii_hexdigit()),
+        "run_id should be hex: {id}"
+    );
+    assert!(!id.contains('-'), "run_id should not contain dashes: {id}");
 }

@@ -19,6 +19,7 @@ hdrhistogram = { workspace = true }
 hostname = { workspace = true }
 sysinfo = { workspace = true }
 chrono = { workspace = true }
+uuid = { workspace = true }
 
 # Dataset loader: HTTP, parquet, async
 tokio = { workspace = true }
