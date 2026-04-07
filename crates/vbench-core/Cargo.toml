@@ -20,6 +20,17 @@ hostname = { workspace = true }
 sysinfo = { workspace = true }
 chrono = { workspace = true }
 
+# Dataset loader: HTTP, parquet, async
+tokio = { workspace = true }
+futures = { workspace = true }
+reqwest = { workspace = true }
+arrow = { workspace = true }
+parquet = { workspace = true }
+dirs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [lints.rust]
 missing_docs = "warn"
 

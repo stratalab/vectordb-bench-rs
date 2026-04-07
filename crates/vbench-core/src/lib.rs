@@ -19,13 +19,22 @@
 #![warn(missing_docs)]
 
 pub mod adapter;
+pub mod cache;
+pub mod dataset;
+pub mod download;
 pub mod error;
 pub mod host;
 pub mod metrics;
+pub mod parquet_io;
 pub mod result;
+pub mod runner;
 
 pub use adapter::{AdapterInfo, BenchAdapter, Metric, VectorRow};
+pub use cache::{cache_dir_for, default_cache_root};
+pub use dataset::{get_spec, DatasetSpec, LoadedDataset, CATALOG};
+pub use download::ensure_dataset_downloaded;
 pub use error::{Result, VbenchError};
 pub use host::HostInfo;
 pub use metrics::{ndcg_at_k, recall_at_k, LatencyHistogram};
 pub use result::{CaseConfig, DbConfig, ResultMetrics, TaskConfig, TestResult, Timestamps};
+pub use runner::{run_benchmark, RunnerOptions};
