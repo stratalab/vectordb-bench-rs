@@ -1,0 +1,18 @@
+# Rust
+/target
+**/*.rs.bk
+# Cargo.lock IS tracked: this workspace produces a binary (vbench-cli)
+# and reproducible builds depend on the lockfile.
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# vbench cache (can be large; should not be committed)
+/tmp/vbench-*
