@@ -1,15 +1,10 @@
-//! Phase orchestration: drives a [`BenchAdapter`] through load → optimize →
-//! recall → serial-latency → produce a [`TestResult`].
+//! Phase orchestration: drives a [`BenchAdapter`] through insert → optimize
+//! → recall → produce a [`TestResult`] in the strict upstream-compatible
+//! schema.
 //!
-//! Phase 1 runs the phases serially. Phase 2 will add a concurrent QPS
-//! sweep that fans out across multiple adapter clones.
-//!
-//! ## Why a free function instead of a `Runner` struct
-//!
-//! `run_benchmark` borrows the dataset and consumes the adapter. There's no
-//! state worth carrying across runs — each call is independent — so a
-//! struct would just be a bag of parameters. The free function makes the
-//! ownership story explicit at the call site.
+//! Phase 1 runs the serial-search phase only. Phase 2 will add a concurrent
+//! QPS sweep that fans out across multiple adapter clones (tracked in the
+//! repo issue tracker).
 
 use std::time::Instant;
 
@@ -19,77 +14,77 @@ use tracing::info;
 use crate::adapter::{BenchAdapter, VectorRow};
 use crate::dataset::LoadedDataset;
 use crate::error::{Result, VbenchError};
-use crate::host::HostInfo;
 use crate::metrics::{ndcg_at_k, recall_at_k, LatencyHistogram};
-use crate::result::{CaseConfig, DbConfig, ResultMetrics, TaskConfig, TestResult, Timestamps};
+use crate::result::{
+    result_label, CaseConfig, CaseResult, ConcurrencySearchConfig, Metric, TaskConfig, TestResult,
+};
 
 /// Phase knobs that the CLI exposes.
 ///
-/// Defaults match VectorDBBench's standard configuration where applicable
-/// (`recall_k = 10`, `warmup_queries = 200`, `batch_size = 1000`).
+/// Defaults match VectorDBBench upstream:
+/// - `recall_k = 100` (upstream's `K_DEFAULT`)
+/// - `warmup_queries = 200` (vbench-specific; upstream uses different
+///   warm-up strategies per adapter)
+/// - `batch_size = 1000` (vbench-specific)
 #[derive(Debug, Clone)]
 pub struct RunnerOptions {
     /// Rows per `BenchAdapter::load` call.
     pub batch_size: usize,
-    /// k for recall@k and ndcg@k.
+    /// k for recall@k and ndcg@k. Defaults to upstream's `K_DEFAULT = 100`.
     pub recall_k: usize,
     /// Warm-up queries to issue during the optimize phase.
     pub warmup_queries: usize,
     /// Free-form label for the published result.
     pub task_label: String,
-    /// `db_config.install_method` (e.g. "stratadb.org/install.sh").
-    pub install_method: Option<String>,
-    /// Free-form notes for `db_config.notes`.
-    pub db_notes: Option<String>,
+    /// `db_config.note` (free-form, e.g. "stratadb.org/install.sh", commit
+    /// SHA, …).
+    pub db_note: Option<String>,
 }
 
 impl Default for RunnerOptions {
     fn default() -> Self {
         Self {
             batch_size: 1000,
-            recall_k: 10,
+            recall_k: 100,
             warmup_queries: 200,
             task_label: "vbench-run".to_string(),
-            install_method: None,
-            db_notes: None,
+            db_note: None,
         }
     }
 }
 
-/// Drive an adapter through every Phase 1 phase and produce a [`TestResult`].
+/// Drive an adapter through the Phase 1 phases and produce a [`TestResult`].
 ///
 /// Phases:
 ///
-/// 1. **load** — stream training rows into the adapter in `batch_size` chunks
-/// 2. **count** — assert the adapter holds `num_train` rows post-load
-/// 3. **optimize** — call `BenchAdapter::optimize` then issue `warmup_queries`
-///    real test queries (discarded; just to force any lazy index build)
+/// 1. **insert** — stream training rows into the adapter in `batch_size`
+///    chunks. Records `insert_duration`.
+/// 2. **count** — assert the adapter holds `num_train` rows post-insert.
+/// 3. **optimize** — call `BenchAdapter::optimize`, then issue
+///    `warmup_queries` real test queries (results discarded; just to
+///    force any lazy index build). Records `optimize_duration`.
+///    `load_duration = insert_duration + optimize_duration`.
 /// 4. **recall + serial latency** — serial loop over every test query,
-///    measure per-query latency, accumulate recall@k and ndcg@k
+///    measure per-query latency, accumulate `recall@k` and `ndcg@k`.
 ///
-/// Errors are wrapped via [`VbenchError::Adapter`] so the caller doesn't need
-/// to know which adapter produced them.
+/// All durations and latencies in the emitted `TestResult` are in
+/// **seconds** (matching upstream).
 pub async fn run_benchmark<A: BenchAdapter>(
     adapter: A,
     dataset: &LoadedDataset,
     opts: &RunnerOptions,
 ) -> Result<TestResult> {
-    let started_at = Utc::now().to_rfc3339();
+    let started_at_secs = Utc::now().timestamp() as f64;
     let info = adapter.info();
-    let metric_str = match dataset.spec.metric {
-        crate::Metric::Cosine => "cosine",
-        crate::Metric::L2 => "l2",
-        crate::Metric::Ip => "ip",
-    };
 
-    // -------- Phase 1: load --------
+    // -------- Phase 1: insert --------
     info!(
         dataset = dataset.spec.id,
         num_train = dataset.spec.num_train,
         batch_size = opts.batch_size,
-        "load phase starting"
+        "insert phase starting"
     );
-    let load_start = Instant::now();
+    let insert_start = Instant::now();
     let mut batch: Vec<VectorRow<'_>> = Vec::with_capacity(opts.batch_size);
     for (id, vector) in dataset.train_iter() {
         batch.push(VectorRow {
@@ -112,8 +107,8 @@ pub async fn run_benchmark<A: BenchAdapter>(
             .map_err(|e| VbenchError::Adapter(e.to_string()))?;
         batch.clear();
     }
-    let load_duration = load_start.elapsed().as_secs_f64();
-    info!(secs = load_duration, "load phase complete");
+    let insert_duration = insert_start.elapsed().as_secs_f64();
+    info!(secs = insert_duration, "insert phase complete");
 
     // -------- count sanity check --------
     let count = adapter
@@ -142,6 +137,7 @@ pub async fn run_benchmark<A: BenchAdapter>(
         let _ = adapter.search(query, opts.recall_k).await;
     }
     let optimize_duration = optimize_start.elapsed().as_secs_f64();
+    let load_duration = insert_duration + optimize_duration;
     info!(secs = optimize_duration, "optimize phase complete");
 
     // -------- Phase 3: recall + serial latency --------
@@ -164,9 +160,12 @@ pub async fn run_benchmark<A: BenchAdapter>(
         let q_micros = q_start.elapsed().as_micros() as u64;
         hist.record_micros(q_micros)?;
 
-        let truth = dataset.ground_truth_for(i);
-        sum_recall += recall_at_k(&actual, truth, opts.recall_k);
-        sum_ndcg += ndcg_at_k(&actual, truth, opts.recall_k);
+        // Truncate ground truth to k, matching upstream's `gt[: self.k]`.
+        let gt_full = dataset.ground_truth_for(i);
+        let gt_topk = &gt_full[..opts.recall_k.min(gt_full.len())];
+
+        sum_recall += recall_at_k(&actual, gt_topk, opts.recall_k);
+        sum_ndcg += ndcg_at_k(&actual, gt_topk, opts.recall_k);
         query_count += 1;
     }
 
@@ -180,68 +179,80 @@ pub async fn run_benchmark<A: BenchAdapter>(
     } else {
         0.0
     };
-    let serial_latency_avg = hist.mean_micros() / 1000.0;
-    let serial_latency_p50 = hist.p50_ms();
-    let serial_latency_p95 = hist.p95_ms();
-    let serial_latency_p99 = hist.p99_ms();
+    let serial_latency_p99 = hist.p99_seconds();
+    let serial_latency_p95 = hist.p95_seconds();
     info!(
         recall = avg_recall,
         ndcg = avg_ndcg,
-        p99_ms = serial_latency_p99,
+        p99_s = serial_latency_p99,
+        p95_s = serial_latency_p95,
+        mean_s = hist.mean_seconds(),
         "recall phase complete"
     );
 
-    // Drop the adapter cleanly. We do this before building the result so any
-    // shutdown error surfaces as an adapter error.
+    // Drop the adapter cleanly. Shutdown errors surface as adapter errors.
     adapter
         .shutdown()
         .await
         .map_err(|e| VbenchError::Adapter(e.to_string()))?;
 
-    let finished_at = Utc::now().to_rfc3339();
+    // Build the strict upstream-compatible TestResult.
+    let metrics = Metric {
+        max_load_count: 0,
+        insert_duration,
+        optimize_duration,
+        load_duration,
+        qps: 0.0, // Phase 2 will set this from the concurrent sweep
+        serial_latency_p99,
+        serial_latency_p95,
+        recall: avg_recall,
+        ndcg: avg_ndcg,
+        ..Metric::default()
+    };
+
+    // Adapter db_config and db_case_config bags. Adapters describe
+    // themselves via `AdapterInfo`; the runner converts that into the
+    // upstream-shaped fields.
+    let db_config = serde_json::json!({
+        "db_label": info.name,
+        "version": info.db_version,
+        "note": opts.db_note.clone().or(info.notes.clone()).unwrap_or_default(),
+    });
+    let db_case_config = serde_json::json!({
+        "metric_type": match dataset.spec.metric {
+            crate::Metric::Cosine => "COSINE",
+            crate::Metric::L2 => "L2",
+            crate::Metric::Ip => "IP",
+        },
+    });
+
+    let case_result = CaseResult {
+        metrics,
+        task_config: TaskConfig {
+            db: info.name.clone(),
+            db_config,
+            db_case_config,
+            case_config: CaseConfig {
+                case_id: dataset.spec.case_id,
+                custom_case: None,
+                k: opts.recall_k as i32,
+                concurrency_search_config: ConcurrencySearchConfig::default(),
+            },
+            stages: vec![
+                "drop_old".to_string(),
+                "load".to_string(),
+                "search_serial".to_string(),
+            ],
+            load_concurrency: 1,
+        },
+        label: result_label::NORMAL.to_string(),
+    };
 
     Ok(TestResult {
-        vbench_schema_version: "1".to_string(),
+        run_id: TestResult::new_run_id(),
         task_label: opts.task_label.clone(),
-        db_config: DbConfig {
-            adapter: info.name,
-            db_version: info.db_version,
-            install_method: opts.install_method.clone(),
-            hnsw_m: None,
-            hnsw_ef_construction: None,
-            hnsw_ef_search: None,
-            notes: opts.db_notes.clone().or(info.notes),
-        },
-        case_config: CaseConfig {
-            dataset: dataset.spec.id.to_string(),
-            dim: dataset.spec.dim,
-            metric: metric_str.to_string(),
-            recall_k: opts.recall_k,
-            num_train: dataset.spec.num_train,
-            num_test: dataset.spec.num_test,
-        },
-        task_config: TaskConfig {
-            batch_size: opts.batch_size,
-            warmup_queries: opts.warmup_queries,
-            run_concurrent: false,
-        },
-        metrics: ResultMetrics {
-            load_duration,
-            optimize_duration,
-            recall: avg_recall,
-            ndcg: avg_ndcg,
-            serial_latency_avg,
-            serial_latency_p50,
-            serial_latency_p95,
-            serial_latency_p99,
-            serial_query_count: query_count,
-            conc_qps_list: vec![],
-            conc_latency_p99_list: vec![],
-        },
-        timestamps: Timestamps {
-            started_at,
-            finished_at,
-            host: HostInfo::snapshot(),
-        },
+        results: vec![case_result],
+        file_fmt: "result_{}_{}_{}.json".to_string(),
+        timestamp: started_at_secs,
     })
 }

@@ -33,6 +33,11 @@ pub struct DatasetSpec {
     pub id: &'static str,
     /// Human-readable name (used in result JSON's `case_config.dataset`).
     pub display_name: &'static str,
+    /// Upstream `vectordb_bench/backend/cases.py:CaseType` integer enum
+    /// value. Cohere-1M = 5 (Performance768D1M). Used to populate
+    /// `case_config.case_id` so our results land in the leaderboard's
+    /// existing slot rather than a separate "custom" bucket.
+    pub case_id: i32,
     /// Vector dimensionality.
     pub dim: usize,
     /// Distance metric the dataset is curated against.
@@ -66,6 +71,7 @@ pub struct DatasetSpec {
 pub const CATALOG: &[DatasetSpec] = &[DatasetSpec {
     id: "cohere-1m",
     display_name: "Cohere medium 1M (768d cosine)",
+    case_id: 5, // upstream: CaseType.Performance768D1M
     dim: 768,
     metric: Metric::Cosine,
     num_train: 1_000_000,
@@ -214,6 +220,7 @@ mod tests {
         static TINY: DatasetSpec = DatasetSpec {
             id: "tiny",
             display_name: "tiny",
+            case_id: 100, // upstream: CaseType.Custom
             dim: 4,
             metric: Metric::Cosine,
             num_train: 3,

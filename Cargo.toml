@@ -53,6 +53,7 @@ which = "7"
 dirs = "5"
 tempfile = "3"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+uuid = { version = "1", features = ["v4"] }
 
 [profile.release]
 lto = "thin"

@@ -1,14 +1,18 @@
 //! Recall and latency metrics.
 //!
-//! Two functions and one wrapper:
+//! [`recall_at_k`] and [`ndcg_at_k`] match VectorDBBench upstream's
+//! implementations exactly (verified against
+//! `vectordb_bench/metric.py:calc_recall` and `calc_ndcg` and the call sites
+//! in `vectordb_bench/backend/runner/serial_runner.py`). Computing these
+//! ourselves with a different formula would silently make our numbers
+//! incomparable to the leaderboard.
 //!
-//! - [`recall_at_k`] — fraction of the ground-truth top-k that the adapter's
-//!   top-k actually returned. Values in `[0.0, 1.0]`.
-//! - [`ndcg_at_k`] — Normalized Discounted Cumulative Gain at k. Values in
-//!   `[0.0, 1.0]`. Rewards correct results that appear earlier in the result
-//!   list, unlike `recall_at_k` which is rank-insensitive.
-//! - [`LatencyHistogram`] — thin wrapper around `hdrhistogram::Histogram<u64>`
-//!   pre-configured for vbench's latency range (1 µs..60 s, 3 sig figs).
+//! Both functions assume `ground_truth` has been **pre-truncated to length
+//! k by the caller** (matching upstream's `gt[: self.k]` slice). The
+//! callers in [`crate::runner`] do this slicing.
+//!
+//! [`LatencyHistogram`] wraps `hdrhistogram::Histogram<u64>` pre-configured
+//! for vbench's latency range (1 µs..60 s, 3 sig figs).
 
 use std::collections::HashSet;
 
@@ -16,72 +20,79 @@ use hdrhistogram::Histogram;
 
 use crate::error::Result;
 
-/// Compute Recall@K.
+/// Compute Recall@K, matching upstream's `calc_recall`.
 ///
-/// `actual` is the adapter's returned top-k (in score order, best first).
-/// `ground_truth` is the dataset's reference neighbour list — typically
-/// longer than k. We compare `actual[..k]` against `ground_truth[..k]`
-/// (or fewer, if either list is shorter than k).
+/// Iterates `actual.iter().take(k)` and counts how many ids appear in
+/// `ground_truth_topk` (which the caller has already truncated to length
+/// k). Divides by `k` (the constant — **not** `min(k, ground_truth.len())`).
 ///
-/// Returns the fraction of ground-truth top-k ids that appear in
-/// `actual[..k]`. Returns `0.0` for `k == 0` to avoid divide-by-zero.
+/// ```text
+/// recall = | { actual[i] for i in 0..k : actual[i] in ground_truth_topk } | / k
+/// ```
 ///
-/// # Panics
+/// Reference: `vectordb_bench/metric.py:calc_recall` and the call site at
+/// `serial_runner.py:180` — `calc_recall(self.k, gt[: self.k], results)`.
 ///
-/// Never panics.
-pub fn recall_at_k(actual: &[u64], ground_truth: &[u64], k: usize) -> f64 {
+/// Returns 0.0 for `k == 0`.
+pub fn recall_at_k(actual: &[u64], ground_truth_topk: &[u64], k: usize) -> f64 {
     if k == 0 {
         return 0.0;
     }
-    let truth_k = k.min(ground_truth.len());
-    if truth_k == 0 {
-        return 0.0;
-    }
-    let actual_top: HashSet<u64> = actual.iter().take(k).copied().collect();
-    let hits = ground_truth
-        .iter()
-        .take(truth_k)
-        .filter(|id| actual_top.contains(id))
-        .count();
-    hits as f64 / truth_k as f64
-}
-
-/// Compute NDCG@K.
-///
-/// Discounts gain by `1 / log2(rank + 2)`. Each ground-truth id earns a
-/// gain of 1.0 if found anywhere in `actual[..k]`. The result is normalised
-/// against the ideal DCG, which assumes every ground-truth id appears in the
-/// top-k positions in the same order they were given.
-///
-/// This matches VectorDBBench's NDCG implementation.
-pub fn ndcg_at_k(actual: &[u64], ground_truth: &[u64], k: usize) -> f64 {
-    if k == 0 {
-        return 0.0;
-    }
-    let truth_k = k.min(ground_truth.len());
-    if truth_k == 0 {
-        return 0.0;
-    }
-    let truth_set: HashSet<u64> = ground_truth.iter().take(truth_k).copied().collect();
-
-    let dcg: f64 = actual
+    let truth_set: HashSet<u64> = ground_truth_topk.iter().copied().collect();
+    let hits = actual
         .iter()
         .take(k)
-        .enumerate()
-        .filter(|(_, id)| truth_set.contains(id))
-        .map(|(rank, _)| 1.0 / ((rank + 2) as f64).log2())
-        .sum();
+        .filter(|id| truth_set.contains(id))
+        .count();
+    hits as f64 / k as f64
+}
 
-    // Ideal DCG: every relevant item in the top positions.
-    let idcg: f64 = (0..truth_k)
-        .map(|rank| 1.0 / ((rank + 2) as f64).log2())
-        .sum();
-
-    if idcg == 0.0 {
-        0.0
-    } else {
-        dcg / idcg
+/// Compute NDCG@K, matching upstream's `calc_ndcg`.
+///
+/// **Important**: this is NOT textbook NDCG. Upstream's implementation
+/// discounts each found id by its **position in `ground_truth_topk`**, not
+/// its position in `actual`. As a consequence, the score is **insensitive
+/// to the order** of items within `actual` — getting the right ids back in
+/// any permutation produces the same NDCG.
+///
+/// Algorithm (verified against `vectordb_bench/metric.py:calc_ndcg`):
+///
+/// ```text
+/// dcg = 0
+/// for got_id in set(actual.iter().take(k)):
+///     if got_id in ground_truth_topk:
+///         idx = ground_truth_topk.index(got_id)   # position in TRUTH, not actual
+///         dcg += 1 / log2(idx + 2)
+/// ndcg = dcg / ideal_dcg
+/// ```
+///
+/// where `ideal_dcg = sum(1/log2(i+2) for i in 0..k)`.
+///
+/// `actual` is deduplicated via a set (matching upstream's `set(got)`).
+///
+/// Returns 0.0 for `k == 0` or when `ideal_dcg == 0`.
+pub fn ndcg_at_k(actual: &[u64], ground_truth_topk: &[u64], k: usize) -> f64 {
+    if k == 0 {
+        return 0.0;
     }
+    let ideal_dcg = ideal_dcg_at_k(k);
+    if ideal_dcg == 0.0 {
+        return 0.0;
+    }
+
+    let actual_set: HashSet<u64> = actual.iter().take(k).copied().collect();
+    let mut dcg = 0.0;
+    for got_id in actual_set {
+        if let Some(idx) = ground_truth_topk.iter().position(|&id| id == got_id) {
+            dcg += 1.0 / ((idx + 2) as f64).log2();
+        }
+    }
+    dcg / ideal_dcg
+}
+
+/// `sum(1/log2(i+2) for i in 0..k)`. Matches upstream's `get_ideal_dcg`.
+pub fn ideal_dcg_at_k(k: usize) -> f64 {
+    (0..k).map(|i| 1.0 / ((i + 2) as f64).log2()).sum()
 }
 
 /// Latency histogram tuned for vbench's measurement range.
@@ -111,7 +122,7 @@ impl LatencyHistogram {
         Ok(())
     }
 
-    /// Mean latency (microseconds).
+    /// Mean latency (microseconds, internal precision).
     pub fn mean_micros(&self) -> f64 {
         self.inner.mean()
     }
@@ -121,19 +132,24 @@ impl LatencyHistogram {
         self.inner.value_at_quantile(p / 100.0)
     }
 
-    /// Convenience: p50 in milliseconds.
-    pub fn p50_ms(&self) -> f64 {
-        self.percentile_micros(50.0) as f64 / 1000.0
+    /// p50 in **seconds** (matches upstream's `serial_latency_*` unit).
+    pub fn p50_seconds(&self) -> f64 {
+        self.percentile_micros(50.0) as f64 / 1_000_000.0
     }
 
-    /// Convenience: p95 in milliseconds.
-    pub fn p95_ms(&self) -> f64 {
-        self.percentile_micros(95.0) as f64 / 1000.0
+    /// p95 in **seconds**.
+    pub fn p95_seconds(&self) -> f64 {
+        self.percentile_micros(95.0) as f64 / 1_000_000.0
     }
 
-    /// Convenience: p99 in milliseconds.
-    pub fn p99_ms(&self) -> f64 {
-        self.percentile_micros(99.0) as f64 / 1000.0
+    /// p99 in **seconds**.
+    pub fn p99_seconds(&self) -> f64 {
+        self.percentile_micros(99.0) as f64 / 1_000_000.0
+    }
+
+    /// Mean latency in **seconds**.
+    pub fn mean_seconds(&self) -> f64 {
+        self.inner.mean() / 1_000_000.0
     }
 
     /// Total samples recorded.
@@ -152,10 +168,10 @@ impl std::fmt::Debug for LatencyHistogram {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LatencyHistogram")
             .field("count", &self.count())
-            .field("mean_us", &self.mean_micros())
-            .field("p50_ms", &self.p50_ms())
-            .field("p95_ms", &self.p95_ms())
-            .field("p99_ms", &self.p99_ms())
+            .field("mean_s", &self.mean_seconds())
+            .field("p50_s", &self.p50_seconds())
+            .field("p95_s", &self.p95_seconds())
+            .field("p99_s", &self.p99_seconds())
             .finish()
     }
 }

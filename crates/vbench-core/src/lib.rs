@@ -35,6 +35,9 @@ pub use dataset::{get_spec, DatasetSpec, LoadedDataset, CATALOG};
 pub use download::ensure_dataset_downloaded;
 pub use error::{Result, VbenchError};
 pub use host::HostInfo;
-pub use metrics::{ndcg_at_k, recall_at_k, LatencyHistogram};
-pub use result::{CaseConfig, DbConfig, ResultMetrics, TaskConfig, TestResult, Timestamps};
+pub use metrics::{ideal_dcg_at_k, ndcg_at_k, recall_at_k, LatencyHistogram};
+pub use result::{
+    result_label, CaseConfig, CaseResult, ConcurrencySearchConfig, Metric as ResultMetric,
+    TaskConfig, TestResult,
+};
 pub use runner::{run_benchmark, RunnerOptions};

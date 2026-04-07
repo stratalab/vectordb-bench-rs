@@ -96,6 +96,7 @@ impl BenchAdapter for CountingAdapter {
 static TINY_SPEC: DatasetSpec = DatasetSpec {
     id: "tiny",
     display_name: "tiny test dataset",
+    case_id: 100, // upstream: CaseType.Custom
     dim: 4,
     metric: Metric::Cosine,
     num_train: 5,
@@ -155,13 +156,12 @@ async fn runner_drives_all_phases_against_mock_adapter() {
         recall_k: 2,
         warmup_queries: 1,
         task_label: "test".to_string(),
-        install_method: None,
-        db_notes: None,
+        db_note: None,
     };
 
-    let result = run_benchmark(adapter, &dataset, &opts).await.unwrap();
+    let test_result = run_benchmark(adapter, &dataset, &opts).await.unwrap();
 
-    // Phase 1: load
+    // Phase 1: insert
     assert_eq!(state.load_calls.load(Ordering::SeqCst), 3, "load batches");
     assert_eq!(state.rows_loaded.load(Ordering::SeqCst), 5, "rows loaded");
 
@@ -183,23 +183,49 @@ async fn runner_drives_all_phases_against_mock_adapter() {
     // shutdown
     assert_eq!(state.shutdown_calls.load(Ordering::SeqCst), 1, "shutdown");
 
-    // The mock returns ground-truth answers verbatim, so recall should be 1.0.
+    // Pull the single CaseResult out and check the upstream-shaped fields.
+    assert_eq!(test_result.results.len(), 1, "one CaseResult");
+    let case = &test_result.results[0];
+    let m = &case.metrics;
+
+    // The mock returns ground-truth answers verbatim, so recall and ndcg
+    // should both be 1.0.
     assert!(
-        (result.metrics.recall - 1.0).abs() < 1e-9,
+        (m.recall - 1.0).abs() < 1e-9,
         "expected recall 1.0, got {}",
-        result.metrics.recall
+        m.recall
     );
     assert!(
-        (result.metrics.ndcg - 1.0).abs() < 1e-9,
+        (m.ndcg - 1.0).abs() < 1e-9,
         "expected ndcg 1.0, got {}",
-        result.metrics.ndcg
+        m.ndcg
     );
-    assert_eq!(result.metrics.serial_query_count, 3);
-    assert_eq!(result.case_config.dataset, "tiny");
-    assert_eq!(result.case_config.recall_k, 2);
-    assert_eq!(result.task_config.batch_size, 2);
-    assert_eq!(result.task_config.warmup_queries, 1);
-    assert!(!result.task_config.run_concurrent);
+
+    // Phase 1 doesn't run the concurrent phase.
+    assert_eq!(m.qps, 0.0);
+    assert!(m.conc_qps_list.is_empty());
+
+    // load_duration invariant.
+    assert!(
+        (m.load_duration - (m.insert_duration + m.optimize_duration)).abs() < 1e-9,
+        "load_duration invariant"
+    );
+
+    // Task config carries the right shape.
+    let tc = &case.task_config;
+    assert_eq!(tc.db, "counting");
+    assert_eq!(tc.case_config.case_id, 100); // TINY uses CaseType.Custom
+    assert_eq!(tc.case_config.k, 2);
+    assert_eq!(
+        tc.stages,
+        vec![
+            "drop_old".to_string(),
+            "load".to_string(),
+            "search_serial".to_string()
+        ]
+    );
+    assert_eq!(tc.load_concurrency, 1);
+    assert_eq!(case.label, ":)");
 }
 
 #[tokio::test]
