@@ -1,0 +1,42 @@
+[package]
+name = "vbench-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "vbench command-line interface"
+
+[[bin]]
+name = "vbench"
+path = "src/main.rs"
+
+[features]
+# Strata is the only adapter today, so it ships in the default feature
+# set. Phase 2 adapters (qdrant, instant-distance, …) will be opt-in
+# via additional features and `all-adapters` will turn them all on.
+default = ["strata"]
+strata = ["dep:vbench-strata"]
+all-adapters = ["strata"]
+
+[dependencies]
+vbench-core = { path = "../vbench-core" }
+vbench-strata = { path = "../vbench-strata", optional = true }
+
+clap = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tempfile = { workspace = true }
+
+[dev-dependencies]
+
+[lints.rust]
+missing_docs = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
