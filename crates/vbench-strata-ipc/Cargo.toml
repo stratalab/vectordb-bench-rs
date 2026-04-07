@@ -1,0 +1,26 @@
+[package]
+name = "vbench-strata-ipc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Hand-rolled MessagePack IPC client for the strata daemon (`strata up`)"
+
+[dependencies]
+serde = { workspace = true }
+rmp-serde = { workspace = true }
+rmpv = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints.rust]
+missing_docs = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
