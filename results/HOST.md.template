@@ -1,0 +1,210 @@
+# Host snapshot
+
+Every published vbench result includes a `HOST.md` next to its JSON
+file. This template is the starting point — copy it, fill it in, and
+include it in your submission PR.
+
+See [`docs/reproducibility.md`](../docs/reproducibility.md) for the
+host preparation steps you should run before recording these numbers.
+
+---
+
+## Required fields
+
+### Hardware
+
+| Field | Value |
+|---|---|
+| **CPU model** | _e.g. AMD Ryzen 9 7950X (Zen 4)_ |
+| **Base / boost clock** | _e.g. 4.5 GHz / 5.7 GHz_ |
+| **Physical cores / logical threads** | _e.g. 16 / 32_ |
+| **L3 cache** | _e.g. 64 MiB_ |
+| **RAM** | _e.g. 64 GiB DDR5-6000_ |
+| **Disk model** | _e.g. Samsung 990 Pro 2TB_ |
+| **Disk type** | _NVMe_ / _SATA SSD_ / _HDD_ |
+| **Filesystem** | _e.g. ext4_ |
+
+How to fill these in on Linux:
+
+```bash
+# CPU
+lscpu | grep -E "Model name|MHz|CPU\(s\)|Thread|Core|L3"
+
+# RAM
+free -h
+sudo dmidecode -t memory | grep -E "Size|Speed|Type:"
+
+# Disk (the device the workdir lives on)
+lsblk -o NAME,MODEL,TRAN,ROTA,SIZE
+df -T <workdir>
+```
+
+On macOS:
+
+```bash
+sysctl -n machdep.cpu.brand_string
+sysctl -n hw.physicalcpu hw.logicalcpu
+sysctl -n hw.memsize
+diskutil info / | grep -E "Device / Media Name|Protocol|Solid State"
+```
+
+### Software
+
+| Field | Value |
+|---|---|
+| **OS distro** | _e.g. Ubuntu 24.04.1 LTS_ |
+| **Kernel** | _e.g. Linux 6.8.0-45-generic_ |
+| **rustc** | _e.g. rustc 1.94.1 (e408947bf 2026-03-25)_ |
+| **vbench version** | _git SHA, e.g. `4f9cab0`_ |
+| **vbench install method** | _e.g. cargo install --git ... --rev <sha>_ |
+| **DB under test** | _e.g. strata 0.6.1_ |
+| **DB install method** | _e.g. curl -fsSL https://stratadb.org/install.sh \| sh_ |
+
+How to capture these:
+
+```bash
+. /etc/os-release && echo "$PRETTY_NAME"
+uname -a
+rustc --version
+vbench --version
+git -C $(dirname $(which vbench))/.. rev-parse HEAD 2>/dev/null || echo "(installed via cargo, no git checkout)"
+strata --version  # or whichever DB
+```
+
+### Tuning
+
+| Field | Value |
+|---|---|
+| **CPU governor** | _performance / powersave / schedutil_ |
+| **Turbo enabled** | _yes / no_ |
+| **Swap** | _on / off_ |
+| **Page cache dropped before run** | _yes / no_ |
+| **Other workload on the box** | _none / list_ |
+
+Linux:
+
+```bash
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+cat /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null \
+    || cat /sys/devices/system/cpu/cpufreq/boost 2>/dev/null \
+    || echo "(unknown)"
+swapon --show
+ps -eo pid,pcpu,pmem,comm --sort=-pcpu | head -5
+```
+
+### Run methodology
+
+| Field | Value |
+|---|---|
+| **Number of measurement runs** | _e.g. 3 (after 1 discarded warm-up)_ |
+| **Statistic reported** | _median by serial_latency_p99_ / _best of N_ / _single run_ |
+| **Spread (min / max)** | _e.g. p99 ranged 9.8–11.2 ms_ |
+| **Run dates** | _e.g. 2026-04-08 14:32 UTC – 14:51 UTC_ |
+
+If reporting a single number from multiple runs, the spread row is
+where you disclose how variable the underlying measurements were.
+This is what makes the result honest.
+
+---
+
+## Optional but encouraged
+
+- **Cooling**: stock cooler / AIO / custom loop / laptop fan
+- **Form factor**: desktop / server / laptop / cloud
+- **Cloud instance type**: e.g. `c7g.4xlarge` (and the AZ if it's
+  performance-relevant)
+- **Virtualisation**: bare metal / KVM / VMware / Docker / WSL2
+- **Power profile**: AC / battery / locked-to-X-watts
+- **Anything else weird**: thermal throttling observed, BIOS
+  settings, undervolting, ECC RAM, NUMA topology
+
+---
+
+## Example: filled-in HOST.md
+
+```markdown
+# Host snapshot
+
+## Hardware
+
+| Field | Value |
+|---|---|
+| CPU model | AMD Ryzen 9 7950X |
+| Base / boost clock | 4.5 GHz / 5.7 GHz |
+| Physical cores / logical threads | 16 / 32 |
+| L3 cache | 64 MiB |
+| RAM | 64 GiB DDR5-6000 |
+| Disk model | Samsung 990 Pro 2TB |
+| Disk type | NVMe |
+| Filesystem | ext4 |
+
+## Software
+
+| Field | Value |
+|---|---|
+| OS distro | Ubuntu 24.04.1 LTS |
+| Kernel | Linux 6.8.0-45-generic |
+| rustc | rustc 1.94.1 (e408947bf 2026-03-25) |
+| vbench version | git 4f9cab0 (cargo install --git ... --rev 4f9cab0) |
+| DB under test | strata 0.6.1 |
+| DB install method | curl -fsSL https://stratadb.org/install.sh \| sh |
+
+## Tuning
+
+| Field | Value |
+|---|---|
+| CPU governor | performance |
+| Turbo enabled | yes |
+| Swap | off |
+| Page cache dropped before run | yes (echo 3 > /proc/sys/vm/drop_caches) |
+| Other workload | none |
+
+## Run methodology
+
+| Field | Value |
+|---|---|
+| Measurement runs | 3 (after 1 discarded warm-up) |
+| Statistic reported | median by serial_latency_p99 |
+| Spread | p99 ranged 9.8–11.2 ms across the 3 runs |
+| Run dates | 2026-04-08 14:32–14:51 UTC |
+
+## Notes
+
+- Bare-metal desktop, no virtualisation
+- AIO cooler, ambient ~22°C
+- ECC RAM disabled
+- BIOS PBO disabled (default boost only)
+```
+
+---
+
+## Why every field matters
+
+If a field on this template feels excessive, here's why it's there:
+
+- **CPU model + clock**: latency varies by ~30% between Zen 3 and
+  Zen 4 at the same workload. The leaderboard groups results by CPU
+  family.
+- **RAM size**: Cohere-1M is ~3 GB resident; OOM-into-swap turns
+  recall p99 from 10 ms into 5 seconds.
+- **Disk type**: load_duration is dominated by parquet decode
+  bandwidth on cold disks. NVMe vs HDD is an order of magnitude.
+- **Kernel version**: io_uring perf changed in 6.x; some adapters
+  use it.
+- **rustc version**: codegen quality changes between Rust releases.
+  We pin a specific version in `rust-toolchain.toml` for this
+  reason.
+- **Governor / turbo**: powersave governor caps boost clock and adds
+  significant variance. The performance governor is what production
+  benchmarks should use.
+- **Other workload**: a parallel `cargo build` running during the
+  benchmark adds 50%+ noise. Don't share the box.
+- **Spread**: lets a reader judge whether your headline number is
+  load-bearing or whether it's within the noise floor.
+
+## Don't fake it
+
+If you don't know a field, write `unknown`. An honest "unknown" is
+much better than a guess. The maintainer team treats fabricated
+values as a fairness violation under
+[`docs/fairness.md`](../docs/fairness.md).
