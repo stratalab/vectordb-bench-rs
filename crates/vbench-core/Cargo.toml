@@ -8,6 +8,18 @@ repository.workspace = true
 authors.workspace = true
 description = "Core types and runner for vectordb-bench-rs"
 
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+hdrhistogram = { workspace = true }
+hostname = { workspace = true }
+sysinfo = { workspace = true }
+chrono = { workspace = true }
+
 [lints.rust]
 missing_docs = "warn"
 
