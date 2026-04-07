@@ -162,9 +162,38 @@ first published Cohere-1M result.
 
 ## Contributing
 
-Adding a new adapter is the most useful contribution. See
-[`docs/adapters.md`](docs/adapters.md) for the `BenchAdapter` trait shape
-and a worked example.
+Three high-leverage contributions:
+
+1. **Submit a benchmark result** for a DB you use, on hardware you
+   control. See [`docs/submitting-results.md`](docs/submitting-results.md)
+   for the process and [`docs/reproducibility.md`](docs/reproducibility.md)
+   for the recipe. Independent third-party submissions are the most
+   valuable thing in the repo.
+2. **Add a new adapter** for a vector database we don't yet cover. See
+   [`docs/adapters.md`](docs/adapters.md) for the `BenchAdapter` trait
+   shape and a worked example.
+3. **Verify a published result** by reproducing it on a similar host
+   and submitting your numbers as a verification PR. See the
+   [verification responses](docs/reproducibility.md#verification-responses)
+   section.
+
+## Trust & fairness
+
+vbench is a community benchmark, not a vanity project. Three documents
+describe how we keep published numbers credible:
+
+- [`docs/submitting-results.md`](docs/submitting-results.md) — the
+  submission process, two tracks (independent vs vendor), required
+  artifacts, acceptance criteria, dispute & retraction process
+- [`docs/fairness.md`](docs/fairness.md) — what tuning is allowed,
+  what counts as cheating, the adapter fairness checklist
+- [`docs/reproducibility.md`](docs/reproducibility.md) — host
+  preparation, statistical methodology (3 runs after a discarded
+  warm-up, report median), known sources of variance, agreement
+  envelopes for verification
+
+Vendor-submitted results are allowed and explicitly tagged as such.
+The fairness rules apply identically.
 
 ## License
 
