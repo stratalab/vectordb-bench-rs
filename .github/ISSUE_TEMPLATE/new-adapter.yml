@@ -1,0 +1,118 @@
+name: New adapter request
+description: Propose adding a new vector database adapter to vbench.
+title: "adapter: "
+labels: ["adapter", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Adding a new vector database is one of the most useful
+        contributions you can make to vbench. Read
+        [`docs/adapters.md`](https://github.com/stratalab/vectordb-bench-rs/blob/main/docs/adapters.md)
+        before filing — it covers the trait shape, the lifecycle,
+        and a worked example using `vbench-strata`.
+
+        File this issue **before** you start writing the adapter so
+        we can sanity-check the integration approach and assign the
+        crate name (`vbench-<dbname>`).
+
+  - type: input
+    id: db-name
+    attributes:
+      label: Database name
+      description: Display name of the vector database.
+      placeholder: e.g. Qdrant, Lance, oasysdb, instant-distance
+    validations:
+      required: true
+
+  - type: input
+    id: db-url
+    attributes:
+      label: Database homepage / repo
+      description: Where the DB lives upstream.
+      placeholder: e.g. https://qdrant.tech, https://github.com/lancedb/lance
+    validations:
+      required: true
+
+  - type: dropdown
+    id: integration-type
+    attributes:
+      label: How will vbench drive it?
+      description: |
+        - **Library**: link the DB as a Rust crate (or via FFI bindings)
+        - **Server (HTTP/gRPC)**: spawn the DB as a server, connect over the network
+        - **Binary subprocess**: spawn the DB binary, drive it over IPC (this is what `vbench-strata` does)
+      options:
+        - Library (in-process)
+        - Server (HTTP/gRPC)
+        - Binary subprocess (IPC)
+        - Other / not sure yet
+    validations:
+      required: true
+
+  - type: input
+    id: db-version
+    attributes:
+      label: Target DB version
+      description: Which release of the DB will the adapter target?
+      placeholder: e.g. qdrant 1.13.x, lance 0.20
+    validations:
+      required: true
+
+  - type: textarea
+    id: bulk-insert-api
+    attributes:
+      label: Bulk insert API
+      description: |
+        How does the DB ingest a batch of vectors? Link to the docs or paste the function signature.
+        The fairness policy requires using the DB's documented bulk-insert API.
+      placeholder: |
+        e.g. `client.upload_collection("col", points: Vec<PointStruct>)` — accepts batches of up to 1000 by default.
+    validations:
+      required: true
+
+  - type: textarea
+    id: search-api
+    attributes:
+      label: k-NN search API
+      description: |
+        How does the DB do top-k search? Function signature + a link.
+      placeholder: |
+        e.g. `client.search(SearchPoints { collection_name, vector, limit, ... })` returns ScoredPoint[].
+    validations:
+      required: true
+
+  - type: textarea
+    id: tuning
+    attributes:
+      label: Tuning parameters
+      description: |
+        Which knobs does the DB expose for index/query tuning? List the ones the adapter
+        will surface in `db_case_config`.
+      placeholder: |
+        - HNSW M (default 16)
+        - HNSW efConstruction (default 100)
+        - HNSW efSearch (default 100)
+        - quantization mode
+    validations:
+      required: false
+
+  - type: textarea
+    id: install
+    attributes:
+      label: How users install the DB
+      description: |
+        Apt? Brew? Docker? Cargo? install.sh? The adapter's lookup chain has to find it.
+      placeholder: |
+        e.g. `cargo install qdrant-cli` or `docker pull qdrant/qdrant`
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else?
+      description: |
+        Quirks, gotchas, dependencies, your COI disclosure if you're a vendor or maintainer of the DB.
+    validations:
+      required: false

@@ -1,0 +1,73 @@
+name: Result dispute
+description: Dispute a published vbench result on grounds of fairness or accuracy.
+title: "dispute: "
+labels: ["result-dispute", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read [the dispute process](https://github.com/stratalab/vectordb-bench-rs/blob/main/docs/submitting-results.md#disputes)
+        and [the fairness policy](https://github.com/stratalab/vectordb-bench-rs/blob/main/docs/fairness.md)
+        before filing.
+
+        Disputes are decided by the maintainer team based on
+        **evidence**, not authority. The default outcome is more
+        transparency, not less — if a result is unclear, the
+        response is to add disclosure, not to delete the submission.
+
+  - type: input
+    id: result-file
+    attributes:
+      label: Disputed result file
+      description: Path within the repo, or a permalink to the file at the SHA you're disputing.
+      placeholder: e.g. results/2026-04/strata-cohere-1m/strata-cohere-1m.json
+    validations:
+      required: true
+
+  - type: dropdown
+    id: dispute-type
+    attributes:
+      label: Type of dispute
+      options:
+        - Fairness violation (the methodology violates docs/fairness.md)
+        - Accuracy concern (numbers don't match a reproduction)
+        - Disclosure incomplete (HOST.md or DISCLOSURE.md is missing required info)
+        - Schema problem (the JSON has wrong units, missing fields, hand-edited)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: |
+        What you found and how. For accuracy disputes, link your reproduction PR
+        if you have one. For fairness disputes, point at the specific adapter code
+        or task config that violates the policy.
+      placeholder: |
+        e.g. "I reproduced this result on a matched host class and got recall=0.81,
+        but the published result reports 0.94. My reproduction is in PR #N."
+    validations:
+      required: true
+
+  - type: textarea
+    id: requested-outcome
+    attributes:
+      label: What outcome are you requesting?
+      description: |
+        Re-run on different hardware? Retract the result? Re-tag as
+        vendor-submitted? Add a clarifying note? Be specific about
+        what would resolve your concern.
+    validations:
+      required: true
+
+  - type: textarea
+    id: coi
+    attributes:
+      label: Conflict of interest
+      description: |
+        Do you work on, contribute to, or get paid by the DB you're disputing
+        the result of? Or by a competing DB? Disclose either way.
+    validations:
+      required: true

@@ -1,0 +1,98 @@
+name: Bug report
+description: Something in vbench is broken or behaving unexpectedly.
+title: "bug: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. The more concrete you can be about
+        what you ran and what you saw, the faster this gets fixed.
+
+        Bugs in the *databases vbench benchmarks* (Strata, Qdrant,
+        etc.) should be reported to the relevant vendor, not here.
+        This tracker is for bugs in the harness itself.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: One or two sentences describing the unexpected behaviour.
+      placeholder: e.g. "vbench run --adapter strata --dataset cohere-1m crashes during the optimize phase with EOF on the IPC socket."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: |
+        The exact commands you ran. Include flags. Paste the output if it's relevant.
+      render: bash
+      placeholder: |
+        STRATA_BIN=~/.strata/bin/strata cargo test -p vbench-strata --test smoke -- --ignored
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What did happen? Paste error messages, panics, or output that's wrong.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: vbench-version
+    attributes:
+      label: vbench version
+      description: Output of `vbench --version`, or the git SHA you built from.
+      placeholder: e.g. vbench 0.1.0 (git 4f9cab0)
+    validations:
+      required: true
+
+  - type: input
+    id: db-version
+    attributes:
+      label: DB version (if relevant)
+      description: For adapter bugs, the version of the database under test.
+      placeholder: e.g. strata 0.6.1
+    validations:
+      required: false
+
+  - type: input
+    id: rust-version
+    attributes:
+      label: rustc version
+      description: Output of `rustc --version`.
+      placeholder: e.g. rustc 1.94.1 (e408947bf 2026-03-25)
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: Output of `uname -a` on Unix or the equivalent on Windows.
+      placeholder: e.g. Linux 6.8.0-45-generic Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: |
+        Anything else that might help: dataset version, custom build flags, host quirks,
+        whether this is reproducible vs intermittent, etc.
+    validations:
+      required: false

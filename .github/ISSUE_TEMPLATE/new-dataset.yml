@@ -1,0 +1,124 @@
+name: New dataset request
+description: Propose adding a new benchmark dataset to the vbench catalog.
+title: "dataset: "
+labels: ["dataset", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read [`docs/datasets.md`](https://github.com/stratalab/vectordb-bench-rs/blob/main/docs/datasets.md)
+        first — it covers the bundle layout, the cache structure, and
+        how `case_id` maps to upstream's `CaseType` enum.
+
+  - type: input
+    id: id
+    attributes:
+      label: Catalog id
+      description: The string id users will pass to `--dataset`. Lowercase, hyphenated.
+      placeholder: e.g. openai-1m, gist-1m, sift-1m, laion-100m
+    validations:
+      required: true
+
+  - type: input
+    id: display-name
+    attributes:
+      label: Display name
+      description: Human-readable name for the catalog table and result JSON.
+      placeholder: e.g. OpenAI text-embedding-3 1M (1536d cosine)
+    validations:
+      required: true
+
+  - type: input
+    id: dim
+    attributes:
+      label: Vector dimensionality
+      placeholder: e.g. 1536
+    validations:
+      required: true
+
+  - type: dropdown
+    id: metric
+    attributes:
+      label: Distance metric
+      options:
+        - cosine
+        - l2
+        - ip (inner product)
+    validations:
+      required: true
+
+  - type: input
+    id: num-train
+    attributes:
+      label: Train set size
+      description: Number of training (corpus) vectors.
+      placeholder: e.g. 1000000
+    validations:
+      required: true
+
+  - type: input
+    id: num-test
+    attributes:
+      label: Test set size
+      description: Number of query vectors.
+      placeholder: e.g. 10000
+    validations:
+      required: true
+
+  - type: input
+    id: num-neighbors
+    attributes:
+      label: Ground-truth neighbours per query
+      description: Maximum k for which ground truth is provided.
+      placeholder: e.g. 100
+    validations:
+      required: true
+
+  - type: input
+    id: case-id
+    attributes:
+      label: Upstream case_id
+      description: |
+        Matching value from `vectordb_bench/backend/cases.py:CaseType`. Use 100 (`CaseType.Custom`)
+        if no upstream slot fits.
+      placeholder: e.g. 5 (Performance768D1M)
+    validations:
+      required: true
+
+  - type: input
+    id: source
+    attributes:
+      label: Hosted bundle URL
+      description: |
+        Where the parquet files live. The bundle layout must match
+        `train.parquet` / `test.parquet` / `neighbors.parquet`.
+      placeholder: e.g. https://assets.zilliz.com/benchmark/openai_v3_small_1m/
+    validations:
+      required: true
+
+  - type: input
+    id: size
+    attributes:
+      label: Approximate download size
+      description: Total bytes of the three parquet files.
+      placeholder: e.g. ~6 GB
+    validations:
+      required: true
+
+  - type: textarea
+    id: license
+    attributes:
+      label: Dataset license / attribution
+      description: |
+        What's the license on the source data? Are there attribution requirements?
+        We can't include datasets that prohibit benchmarking or commercial use.
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else?
+      description: Quirks, schema variations, why this dataset matters, who'll use it.
+    validations:
+      required: false
