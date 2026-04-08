@@ -1,0 +1,17 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Submit a benchmark result
+    url: https://github.com/stratalab/vectordb-bench-rs/blob/main/docs/submitting-results.md
+    about: Results are submitted as pull requests, not issues. Read the submission process first.
+  - name: Reproduce a published result
+    url: https://github.com/stratalab/vectordb-bench-rs/blob/main/docs/reproducibility.md
+    about: The reproduction recipe, host preparation, and verification workflow.
+  - name: Read the methodology
+    url: https://github.com/stratalab/vectordb-bench-rs/blob/main/docs/methodology.md
+    about: Phase definitions, recall@k / NDCG@k formulas, units, defaults.
+  - name: Fairness policy
+    url: https://github.com/stratalab/vectordb-bench-rs/blob/main/docs/fairness.md
+    about: What tuning is allowed, what counts as cheating.
+  - name: Report a security vulnerability
+    url: https://github.com/stratalab/vectordb-bench-rs/security/advisories/new
+    about: Use GitHub Private Vulnerability Reporting, not the public issue tracker.
